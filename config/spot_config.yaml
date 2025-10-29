@@ -1,0 +1,83 @@
+# Spot ROS2 Driver Configuration
+
+/**:
+  ros__parameters:
+    # ==================== Connection & Authentication ====================
+    username: "your_username"
+    password: "your_password"
+    hostname: "192.168.80.3"
+
+    # ==================== Automatic Behaviors ====================
+    auto_claim: False           # Automatically claim lease on startup
+    auto_power_on: False        # Automatically power on motors on startup
+    auto_stand: False           # Automatically stand up after powering on
+
+    # ==================== Update Rates (Hz) ====================
+    robot_state_rate: 50.0      # Rate for joint states, TF, and status updates
+    image_rate: 15.0            # Rate for camera images (max ~15 Hz from Spot)
+    metrics_rate: 0.04          # Rate for metrics updates
+    lease_rate: 1.0             # Rate for lease status updates
+    async_tasks_rate: 10.0      # Rate for async task processing
+    velodyne_rate: 10.0         # Rate for Velodyne point cloud streaming
+
+    # ==================== E-Stop Configuration ====================
+    estop_timeout: 9.0          # E-stop timeout in seconds
+    start_estop: False          # Start with software e-stop enabled
+
+    # ==================== Frame Configuration ====================
+    preferred_odom_frame: "odom"  # Odometry frame [odom, vision] - used in odometry topic
+    tf_root: "odom"               # TF tree root frame [odom, vision, body]
+    spot_name: ""                 # Robot namespace (empty string = no namespace)
+    # frame_prefix: ""            # Explicit prefix for all TF frames (empty string is valid)
+
+    # ==================== Command Durations ====================
+    cmd_duration: 0.25          # Duration of cmd_vel commands (increase if Spot stutters)
+    arm_cmd_duration: 1.0       # Duration of arm_vel commands (decrease if arm has delay, publish >4Hz)
+
+    # ==================== Camera Configuration ====================
+    rgb_cameras: False          # Set to False if robot has greyscale cameras
+    initialize_spot_cam: False  # Set to True if using SpotCam payload module
+
+    # Specify which cameras to publish (uncomment and edit to customize)
+    # cameras_used: ["frontleft", "frontright", "left", "right", "back", "hand"]
+
+    # ==================== Payload Sensors ====================
+    use_velodyne: True          # Enable Velodyne lidar point cloud streaming (Spot EAP)
+    gripperless: False          # Set to True if arm has no gripper
+
+    # ==================== Image Stitching (Virtual Front Camera) ====================
+    # Virtual camera intrinsic matrix [fx, 0, cx, 0, fy, cy, 0, 0, 1]
+    # fx stretches left-right, fy zooms, cx moves left-right, cy moves up-down
+    virtual_camera_intrinsics: [385.0, 0.0, 315.0, 0.0, 385.0, 844.0, 0.0, 0.0, 1.0]
+    
+    # Plane that stitched image is projected on (relative to virtual camera frame)
+    virtual_camera_projection_plane: [-0.15916, 0.0, 0.987253]
+    
+    # Distance from virtual camera frame to projection plane
+    virtual_camera_plane_distance: 0.5
+    
+    # Stitched image size: (<frontleft width>, <frontleft height> + row_padding)
+    stitched_image_row_padding: 1182
+
+    # ==================== Additional Options (Commented Out) ====================
+    # These options are available but not commonly used. Uncomment and modify as needed.
+
+    # # Point Cloud Publishing (from depth cameras)
+    # publish_point_clouds: False          # Publish 3D point clouds from depth images
+    
+    # # Image Compression Options
+    # uncompress_images: True              # Publish uncompressed images to /<robot>/camera/<location>/image
+    # publish_compressed_images: True      # Publish compressed images to /<robot>/camera/<location>/compressed
+    
+    # # Front Camera Stitching
+    # stitch_front_images: False           # Stitch front left/right cameras into single virtual image
+    
+    # # Low-Level Control
+    # controllable: False                  # Enable low-level control capabilities (advanced)
+    
+    # # Custom URDF
+    # robot_description_package: "spot_description"  # Package containing custom URDF model
+    
+    # # Additional Rates
+    # # world_object_rate: 10.0            # Rate for world object detection updates
+    # # graph_nav_rate: 1.0                # Rate for graph nav localization updates
