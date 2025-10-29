@@ -1,0 +1,32 @@
+# Environment files with credentials
+.env
+*.env
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# ROS
+build/
+install/
+log/
