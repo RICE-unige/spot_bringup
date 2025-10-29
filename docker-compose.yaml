@@ -1,0 +1,22 @@
+services:
+  spot-driver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        EXPERIMENTAL_ZENOH_RMW: "FALSE"
+    image: spot_ros2_rviz:latest
+    container_name: spot_driver
+    network_mode: host
+    volumes:
+      - ./config/spot_config.yaml:/ros_ws/config/spot_config.yaml:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      - DISPLAY
+      - XAUTHORITY=/root/.Xauthority
+      - QT_X11_NO_MITSHM=1
+      - LIBGL_ALWAYS_SOFTWARE=1
+    command: bash -c "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && ros2 launch spot_driver spot_driver.launch.py config_file:=/ros_ws/config/spot_config.yaml launch_rviz:=True"
+    stdin_open: true
+    tty: true
