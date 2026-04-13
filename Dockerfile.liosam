@@ -1,0 +1,56 @@
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV SHELL=/bin/bash
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gettext-base \
+    git \
+    libopencv-dev \
+    libpcl-dev \
+    python3-colcon-common-extensions \
+    python3-pip \
+    python3-vcstool \
+    ros-humble-cv-bridge \
+    ros-humble-gtsam \
+    ros-humble-pcl-conversions \
+    ros-humble-pcl-msgs \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-rosidl-default-generators \
+    ros-humble-tf2-eigen \
+    ros-humble-tf2-geometry-msgs \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-sensor-msgs \
+    ros-humble-velodyne-driver \
+    ros-humble-velodyne-msgs \
+    ros-humble-velodyne-pointcloud \
+    ros-humble-xacro \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir \
+    bosdyn-api==5.0.1 \
+    bosdyn-client==5.0.1 \
+    bosdyn-core==5.0.1
+
+WORKDIR /liosam_ws
+COPY lio_sam.repos /tmp/lio_sam.repos
+RUN mkdir -p src \
+    && vcs import src < /tmp/lio_sam.repos \
+    && sed -i 's/trans_odom_to_lidar.child_frame_id = "lidar_link";/trans_odom_to_lidar.child_frame_id = lidarFrame;/' \
+        src/lio_sam/src/mapOptmization.cpp \
+    && python3 -c "from pathlib import Path; p = Path('/liosam_ws/src/lio_sam/src/imageProjection.cpp'); t = p.read_text(); old = '''        if (imuQueue.empty() ||\n            stamp2Sec(imuQueue.front().header.stamp) > timeScanCur ||\n            stamp2Sec(imuQueue.back().header.stamp) < timeScanEnd)\n'''; new = '''        constexpr double imuTailTolerance = 0.02;\n        if (imuQueue.empty() ||\n            stamp2Sec(imuQueue.front().header.stamp) > timeScanCur ||\n            stamp2Sec(imuQueue.back().header.stamp) + imuTailTolerance < timeScanEnd)\n'''; assert old in t, 'Failed to patch imageProjection.cpp IMU deskew gate'; p.write_text(t.replace(old, new, 1))"
+
+COPY ros2_ws/src/spot_velodyne_config /liosam_ws/src/spot_velodyne_config
+
+RUN source /opt/ros/humble/setup.bash \
+    && colcon build --symlink-install --packages-select lio_sam spot_velodyne_config \
+       --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+COPY tools/render_cyclonedds_config.sh /usr/local/bin/render_cyclonedds_config
+COPY tools/slam_entrypoint.sh /usr/local/bin/slam_entrypoint
+COPY tools/run_lio_sam.sh /usr/local/bin/run_lio_sam
+RUN chmod +x /usr/local/bin/render_cyclonedds_config /usr/local/bin/slam_entrypoint /usr/local/bin/run_lio_sam
+
+ENTRYPOINT ["/usr/local/bin/slam_entrypoint"]
+CMD ["bash"]

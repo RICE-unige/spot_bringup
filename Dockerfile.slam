@@ -1,0 +1,33 @@
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV SHELL=/bin/bash
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gettext-base \
+    python3-colcon-common-extensions \
+    ros-humble-mola \
+    ros-humble-mola-lidar-odometry \
+    ros-humble-mola-state-estimation \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-tf2-ros \
+    ros-humble-velodyne-driver \
+    ros-humble-velodyne-msgs \
+    ros-humble-velodyne-pointcloud \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ros2_ws/src
+COPY ros2_ws/src/spot_velodyne_config ./spot_velodyne_config
+
+WORKDIR /ros2_ws
+RUN source /opt/ros/humble/setup.bash \
+    && colcon build --symlink-install --packages-select spot_velodyne_config
+
+COPY tools/render_cyclonedds_config.sh /usr/local/bin/render_cyclonedds_config
+COPY tools/slam_entrypoint.sh /usr/local/bin/slam_entrypoint
+COPY tools/run_mola_lo.sh /usr/local/bin/run_mola_lo
+RUN chmod +x /usr/local/bin/render_cyclonedds_config /usr/local/bin/slam_entrypoint /usr/local/bin/run_mola_lo
+
+ENTRYPOINT ["/usr/local/bin/slam_entrypoint"]
+CMD ["bash"]

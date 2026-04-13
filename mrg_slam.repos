@@ -1,0 +1,21 @@
+repositories:
+  mrg_slam:
+    type: git
+    url: https://github.com/aserbremen/mrg_slam
+    version: c614d636746e4bc6075147ff2c42c77e151137b2
+  mrg_slam_msgs:
+    type: git
+    url: https://github.com/aserbremen/mrg_slam_msgs
+    version: 232287e7d2ff813b9d4fe33fa8fa69b19bb7930a
+  small_gicp:
+    type: git
+    url: https://github.com/koide3/small_gicp.git
+    version: 78f2e7a221720625eb95271ad9da21a04fb77f86
+  fast_gicp:
+    type: git
+    url: https://github.com/SMRT-AIST/fast_gicp
+    version: 0e7ec1441c99f7be453db2ea216d5de029387417
+  ndt_omp:
+    type: git
+    url: https://github.com/aserbremen/ndt_omp
+    version: 8cc0e47d1691a7056755cdcc89ebf6fa91d93d02

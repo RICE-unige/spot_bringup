@@ -1,0 +1,58 @@
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV SHELL=/bin/bash
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gettext-base \
+    git \
+    build-essential \
+    cmake \
+    libeigen3-dev \
+    libpcl-dev \
+    libomp-dev \
+    python3-colcon-common-extensions \
+    python3-pip \
+    python3-vcstool \
+    ros-humble-pcl-ros \
+    ros-humble-pcl-conversions \
+    ros-humble-eigen3-cmake-module \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-tf2 \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-eigen \
+    ros-humble-tf2-geometry-msgs \
+    ros-humble-tf2-sensor-msgs \
+    ros-humble-sensor-msgs \
+    ros-humble-nav-msgs \
+    ros-humble-geometry-msgs \
+    ros-humble-std-msgs \
+    ros-humble-visualization-msgs \
+    ros-humble-rclcpp \
+    ros-humble-rclcpp-components \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m pip install --no-cache-dir \
+    bosdyn-api==5.0.1 \
+    bosdyn-client==5.0.1 \
+    bosdyn-core==5.0.1
+
+WORKDIR /fastlio_ws
+COPY fast_lio.repos /tmp/fast_lio.repos
+RUN mkdir -p src \
+    && vcs import src < /tmp/fast_lio.repos
+
+COPY ros2_ws/src/spot_velodyne_config /fastlio_ws/src/spot_velodyne_config
+
+RUN source /opt/ros/humble/setup.bash \
+    && colcon build --symlink-install --packages-select spark_fast_lio spot_velodyne_config \
+       --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+COPY tools/render_cyclonedds_config.sh /usr/local/bin/render_cyclonedds_config
+COPY tools/slam_entrypoint.sh /usr/local/bin/slam_entrypoint
+COPY tools/run_fast_lio.sh /usr/local/bin/run_fast_lio
+RUN chmod +x /usr/local/bin/render_cyclonedds_config /usr/local/bin/slam_entrypoint /usr/local/bin/run_fast_lio
+
+ENTRYPOINT ["/usr/local/bin/slam_entrypoint"]
+CMD ["bash"]

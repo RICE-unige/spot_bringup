@@ -4,19 +4,992 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        EXPERIMENTAL_ZENOH_RMW: "FALSE"
-    image: spot_ros2_rviz:latest
+        EXPERIMENTAL_ZENOH_RMW: "${EXPERIMENTAL_ZENOH_RMW:-FALSE}"
+    image: spot_bringup_driver:humble
     container_name: spot_driver
     network_mode: host
     volumes:
       - ./config/spot_config.yaml:/ros_ws/config/spot_config.yaml:ro
+      - ./secrets:/run/spot-secrets:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${HOME}/.Xauthority:/root/.Xauthority:ro
     environment:
-      - DISPLAY
-      - XAUTHORITY=/root/.Xauthority
-      - QT_X11_NO_MITSHM=1
-      - LIBGL_ALWAYS_SOFTWARE=1
-    command: bash -c "source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash && ros2 launch spot_driver spot_driver.launch.py config_file:=/ros_ws/config/spot_config.yaml launch_rviz:=True"
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_HOSTNAME: "${SPOT_HOSTNAME:-192.168.80.3}"
+      SPOT_USERNAME: "${SPOT_USERNAME:-user}"
+      SPOT_PASSWORD: "${SPOT_PASSWORD:-}"
+      SPOT_PASSWORD_FILE: "${SPOT_PASSWORD_FILE:-/run/spot-secrets/spot_password.txt}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      LAUNCH_RVIZ: "${LAUNCH_RVIZ:-False}"
+      RENDER_SPOT_CONFIG: "1"
+    command:
+      - ros2
+      - launch
+      - spot_driver
+      - spot_driver.launch.py
+      - config_file:=/tmp/spot_config.generated.yaml
+      - launch_rviz:=${LAUNCH_RVIZ:-False}
+      - controllable:=False
+    stdin_open: true
+    tty: true
+
+  spot-rviz:
+    profiles: ["rviz"]
+    image: spot_bringup_driver:humble
+    container_name: spot_rviz
+    network_mode: host
+    depends_on:
+      - spot-driver
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+    command:
+      - /bin/bash
+      - -lc
+      - >
+        set -euo pipefail;
+        spot_name="$${SPOT_NAME:-}";
+        tf_prefix="$${SPOT_FRAME_PREFIX:-}";
+        args=(ros2 launch spot_driver rviz.launch.py);
+        if [ -n "$$spot_name" ]; then
+          args+=("spot_name:=$$spot_name");
+        fi;
+        if [ -n "$$tf_prefix" ]; then
+          args+=("tf_prefix:=$$tf_prefix");
+        fi;
+        exec "$${args[@]}"
+    stdin_open: true
+    tty: true
+
+  velodyne:
+    profiles: ["slam"]
+    build:
+      context: .
+      dockerfile: Dockerfile.slam
+    image: spot_bringup_slam:humble
+    container_name: spot_velodyne
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      VELODYNE_DEVICE_IP: "${VELODYNE_DEVICE_IP:-192.168.1.201}"
+      VELODYNE_FRAME: "${VELODYNE_FRAME:-slam_velodyne}"
+      VELODYNE_PARENT_FRAME: "${VELODYNE_PARENT_FRAME:-slam_body}"
+      VELODYNE_X: "${VELODYNE_X:-0.0}"
+      VELODYNE_Y: "${VELODYNE_Y:-0.0}"
+      VELODYNE_Z: "${VELODYNE_Z:-0.25}"
+      VELODYNE_ROLL: "${VELODYNE_ROLL:-0.0}"
+      VELODYNE_PITCH: "${VELODYNE_PITCH:-0.0}"
+      VELODYNE_YAW: "${VELODYNE_YAW:-0.0}"
+    command:
+      - ros2
+      - launch
+      - spot_velodyne_config
+      - velodyne_vlp16.launch.py
+      - device_ip:=${VELODYNE_DEVICE_IP:-192.168.1.201}
+      - frame_id:=${VELODYNE_FRAME:-slam_velodyne}
+      - parent_frame:=${VELODYNE_PARENT_FRAME:-slam_body}
+      - x:=${VELODYNE_X:-0.0}
+      - y:=${VELODYNE_Y:-0.0}
+      - z:=${VELODYNE_Z:-0.25}
+      - roll:=${VELODYNE_ROLL:-0.0}
+      - pitch:=${VELODYNE_PITCH:-0.0}
+      - yaw:=${VELODYNE_YAW:-0.0}
+    stdin_open: true
+    tty: true
+
+  velodyne-mrg-hybrid:
+    profiles: ["mrg-hybrid", "mrg-hybrid-rviz"]
+    image: spot_bringup_slam:humble
+    container_name: spot_velodyne_mrg_hybrid
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MRG_HYBRID_VELODYNE_DEVICE_IP: "${MRG_HYBRID_VELODYNE_DEVICE_IP:-192.168.1.201}"
+      MRG_HYBRID_VELODYNE_FRAME: "${MRG_HYBRID_VELODYNE_FRAME:-mrg_velodyne}"
+      MRG_HYBRID_VELODYNE_PARENT_FRAME: "${MRG_HYBRID_VELODYNE_PARENT_FRAME:-mrg_body}"
+      MRG_HYBRID_VELODYNE_X: "${MRG_HYBRID_VELODYNE_X:-0.0}"
+      MRG_HYBRID_VELODYNE_Y: "${MRG_HYBRID_VELODYNE_Y:-0.0}"
+      MRG_HYBRID_VELODYNE_Z: "${MRG_HYBRID_VELODYNE_Z:-0.25}"
+      MRG_HYBRID_VELODYNE_ROLL: "${MRG_HYBRID_VELODYNE_ROLL:-0.0}"
+      MRG_HYBRID_VELODYNE_PITCH: "${MRG_HYBRID_VELODYNE_PITCH:-0.0}"
+      MRG_HYBRID_VELODYNE_YAW: "${MRG_HYBRID_VELODYNE_YAW:-0.0}"
+    command:
+      - ros2
+      - launch
+      - spot_velodyne_config
+      - velodyne_vlp16.launch.py
+      - device_ip:=${MRG_HYBRID_VELODYNE_DEVICE_IP:-192.168.1.201}
+      - frame_id:=${MRG_HYBRID_VELODYNE_FRAME:-mrg_velodyne}
+      - parent_frame:=${MRG_HYBRID_VELODYNE_PARENT_FRAME:-mrg_body}
+      - x:=${MRG_HYBRID_VELODYNE_X:-0.0}
+      - y:=${MRG_HYBRID_VELODYNE_Y:-0.0}
+      - z:=${MRG_HYBRID_VELODYNE_Z:-0.25}
+      - roll:=${MRG_HYBRID_VELODYNE_ROLL:-0.0}
+      - pitch:=${MRG_HYBRID_VELODYNE_PITCH:-0.0}
+      - yaw:=${MRG_HYBRID_VELODYNE_YAW:-0.0}
+    stdin_open: true
+    tty: true
+
+  velodyne-liosam:
+    profiles: ["liosam", "liosam-rviz", "liosam-bridge"]
+    image: spot_bringup_slam:humble
+    container_name: spot_velodyne_liosam
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      LIO_SAM_VELODYNE_DEVICE_IP: "${LIO_SAM_VELODYNE_DEVICE_IP:-192.168.1.201}"
+      LIO_SAM_VELODYNE_FRAME: "${LIO_SAM_VELODYNE_FRAME:-liosam_velodyne}"
+      LIO_SAM_VELODYNE_PARENT_FRAME: "${LIO_SAM_VELODYNE_PARENT_FRAME:-liosam_body}"
+      LIO_SAM_VELODYNE_X: "${LIO_SAM_VELODYNE_X:-0.0}"
+      LIO_SAM_VELODYNE_Y: "${LIO_SAM_VELODYNE_Y:-0.0}"
+      LIO_SAM_VELODYNE_Z: "${LIO_SAM_VELODYNE_Z:-0.25}"
+      LIO_SAM_VELODYNE_ROLL: "${LIO_SAM_VELODYNE_ROLL:-0.0}"
+      LIO_SAM_VELODYNE_PITCH: "${LIO_SAM_VELODYNE_PITCH:-0.0}"
+      LIO_SAM_VELODYNE_YAW: "${LIO_SAM_VELODYNE_YAW:-0.0}"
+    command:
+      - ros2
+      - launch
+      - spot_velodyne_config
+      - velodyne_vlp16.launch.py
+      - device_ip:=${LIO_SAM_VELODYNE_DEVICE_IP:-192.168.1.201}
+      - frame_id:=${LIO_SAM_VELODYNE_FRAME:-liosam_velodyne}
+      - parent_frame:=${LIO_SAM_VELODYNE_PARENT_FRAME:-liosam_body}
+      - x:=${LIO_SAM_VELODYNE_X:-0.0}
+      - y:=${LIO_SAM_VELODYNE_Y:-0.0}
+      - z:=${LIO_SAM_VELODYNE_Z:-0.25}
+      - roll:=${LIO_SAM_VELODYNE_ROLL:-0.0}
+      - pitch:=${LIO_SAM_VELODYNE_PITCH:-0.0}
+      - yaw:=${LIO_SAM_VELODYNE_YAW:-0.0}
+    stdin_open: true
+    tty: true
+
+  spot-sdk-imu:
+    profiles: ["liosam", "liosam-rviz", "liosam-bridge"]
+    build:
+      context: .
+      dockerfile: Dockerfile.liosam
+    image: spot_bringup_liosam:humble
+    container_name: spot_sdk_imu
+    network_mode: host
+    depends_on:
+      - spot-driver
+    volumes:
+      - ./secrets:/run/spot-secrets:ro
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_HOSTNAME: "${SPOT_HOSTNAME:-192.168.80.3}"
+      SPOT_USERNAME: "${SPOT_USERNAME:-user}"
+      SPOT_PASSWORD: "${SPOT_PASSWORD:-}"
+      SPOT_PASSWORD_FILE: "${SPOT_PASSWORD_FILE:-/run/spot-secrets/spot_password.txt}"
+      LIO_SAM_IMU_TOPIC: "${LIO_SAM_IMU_TOPIC:-/lio_sam/imu}"
+      SPOT_SDK_IMU_FRAME: "${SPOT_SDK_IMU_FRAME:-liosam_body}"
+      SPOT_SDK_IMU_SOURCE_MODE: "${SPOT_SDK_IMU_SOURCE_MODE:-auto}"
+      SPOT_SDK_IMU_FALLBACK_RATE_HZ: "${SPOT_SDK_IMU_FALLBACK_RATE_HZ:-100.0}"
+      SPOT_SDK_IMU_FALLBACK_USE_VELOCITY_DERIVATIVE: "${SPOT_SDK_IMU_FALLBACK_USE_VELOCITY_DERIVATIVE:-True}"
+      SPOT_SDK_IMU_FALLBACK_ACCEL_FILTER_COEFF: "${SPOT_SDK_IMU_FALLBACK_ACCEL_FILTER_COEFF:-0.3}"
+      SPOT_SDK_IMU_ADD_GRAVITY: "${SPOT_SDK_IMU_ADD_GRAVITY:-True}"
+      SPOT_SDK_IMU_GRAVITY: "${SPOT_SDK_IMU_GRAVITY:-9.80511}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - spot_sdk_imu_publisher.py
+    stdin_open: true
+    tty: true
+
+  lio-sam:
+    profiles: ["liosam", "liosam-rviz", "liosam-bridge"]
+    image: spot_bringup_liosam:humble
+    container_name: lio_sam
+    network_mode: host
+    depends_on:
+      - spot-sdk-imu
+      - velodyne-liosam
+    volumes:
+      - ./config:/spot_bringup/config:ro
+      - ./maps:/spot_bringup/maps:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      LIO_SAM_CONFIG: "${LIO_SAM_CONFIG:-/spot_bringup/config/lio_sam_spot.yaml}"
+    command:
+      - run_lio_sam
+    stdin_open: true
+    tty: true
+
+  lio-sam-map-odom-bridge:
+    profiles: ["liosam-bridge"]
+    image: spot_bringup_liosam:humble
+    container_name: lio_sam_map_odom_bridge
+    network_mode: host
+    depends_on:
+      - lio-sam
+      - spot-driver
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      LIO_SAM_MAP_ODOM_MAP_FRAME: "${LIO_SAM_MAP_ODOM_MAP_FRAME:-map}"
+      LIO_SAM_MAP_ODOM_SLAM_BASE_FRAME: "${LIO_SAM_MAP_ODOM_SLAM_BASE_FRAME:-liosam_body}"
+      LIO_SAM_MAP_ODOM_SPOT_ODOM_FRAME: "${LIO_SAM_MAP_ODOM_SPOT_ODOM_FRAME:-odom}"
+      LIO_SAM_MAP_ODOM_SPOT_BASE_FRAME: "${LIO_SAM_MAP_ODOM_SPOT_BASE_FRAME:-body}"
+      LIO_SAM_MAP_ODOM_PUBLISH_RATE_HZ: "${LIO_SAM_MAP_ODOM_PUBLISH_RATE_HZ:-20.0}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - map_to_odom_tf_bridge.py
+      - --ros-args
+      - -p
+      - map_frame:=${LIO_SAM_MAP_ODOM_MAP_FRAME:-map}
+      - -p
+      - slam_base_frame:=${LIO_SAM_MAP_ODOM_SLAM_BASE_FRAME:-liosam_body}
+      - -p
+      - spot_odom_frame:=${LIO_SAM_MAP_ODOM_SPOT_ODOM_FRAME:-odom}
+      - -p
+      - spot_base_frame:=${LIO_SAM_MAP_ODOM_SPOT_BASE_FRAME:-body}
+      - -p
+      - publish_rate_hz:=${LIO_SAM_MAP_ODOM_PUBLISH_RATE_HZ:-20.0}
+    stdin_open: true
+    tty: true
+
+  lio-sam-rviz:
+    profiles: ["liosam-rviz"]
+    image: spot_bringup_driver:humble
+    container_name: lio_sam_rviz
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - lio-sam
+    volumes:
+      - ./rviz:/spot_bringup/rviz:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+      LIO_SAM_RVIZ_CONFIG: "${LIO_SAM_RVIZ_CONFIG:-/spot_bringup/rviz/lio_sam_spot.rviz}"
+    command:
+      - rviz2
+      - -d
+      - ${LIO_SAM_RVIZ_CONFIG:-/spot_bringup/rviz/lio_sam_spot.rviz}
+    stdin_open: true
+    tty: true
+
+  mrg-slam:
+    profiles: ["slam"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mrg
+    image: spot_bringup_mrg:humble
+    container_name: mrg_slam
+    network_mode: host
+    depends_on:
+      - velodyne
+    volumes:
+      - ./config:/spot_bringup/config:ro
+      - ./maps:/spot_bringup/maps:rw
+      - ./graphs:/spot_bringup/graphs:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MRG_SLAM_CONFIG: "${MRG_SLAM_CONFIG:-/spot_bringup/config/mrg_slam_spot.yaml}"
+      MRG_USE_SIM_TIME: "${MRG_USE_SIM_TIME:-False}"
+      MRG_X: "${MRG_X:-0.0}"
+      MRG_Y: "${MRG_Y:-0.0}"
+      MRG_Z: "${MRG_Z:-0.0}"
+      MRG_ROLL: "${MRG_ROLL:-0.0}"
+      MRG_PITCH: "${MRG_PITCH:-0.0}"
+      MRG_YAW: "${MRG_YAW:-0.0}"
+      MRG_INIT_ODOM_TOPIC: "${MRG_INIT_ODOM_TOPIC:-NONE}"
+      MRG_INIT_POSE_TOPIC: "${MRG_INIT_POSE_TOPIC:-NONE}"
+      MRG_RESULT_DIR: "${MRG_RESULT_DIR:-}"
+    command:
+      - run_mrg_slam
+    stdin_open: true
+    tty: true
+
+  mrg-slam-hybrid:
+    profiles: ["mrg-hybrid", "mrg-hybrid-rviz"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mrg
+    image: spot_bringup_mrg:humble
+    container_name: mrg_slam_hybrid
+    network_mode: host
+    depends_on:
+      - velodyne-mrg-hybrid
+    volumes:
+      - ./config:/spot_bringup/config:ro
+      - ./maps:/spot_bringup/maps:rw
+      - ./graphs:/spot_bringup/graphs:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MRG_SLAM_CONFIG: "${MRG_HYBRID_MRG_CONFIG:-/spot_bringup/config/mrg_slam_hybrid.yaml}"
+      MRG_USE_SIM_TIME: "${MRG_HYBRID_USE_SIM_TIME:-False}"
+      MRG_X: "${MRG_X:-0.0}"
+      MRG_Y: "${MRG_Y:-0.0}"
+      MRG_Z: "${MRG_Z:-0.0}"
+      MRG_ROLL: "${MRG_ROLL:-0.0}"
+      MRG_PITCH: "${MRG_PITCH:-0.0}"
+      MRG_YAW: "${MRG_YAW:-0.0}"
+      MRG_INIT_ODOM_TOPIC: "${MRG_INIT_ODOM_TOPIC:-NONE}"
+      MRG_INIT_POSE_TOPIC: "${MRG_INIT_POSE_TOPIC:-NONE}"
+      MRG_RESULT_DIR: "${MRG_RESULT_DIR:-}"
+    command:
+      - run_mrg_slam
+    stdin_open: true
+    tty: true
+
+  mrg-slam-toolbox:
+    profiles: ["mrg-hybrid", "mrg-hybrid-rviz"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mrg
+    image: spot_bringup_mrg:humble
+    container_name: mrg_slam_toolbox
+    network_mode: host
+    depends_on:
+      - velodyne-mrg-hybrid
+      - mrg-slam-hybrid
+    volumes:
+      - ./config:/spot_bringup/config:ro
+      - ./maps:/spot_bringup/maps:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MRG_HYBRID_SLAM_TOOLBOX_CONFIG: "${MRG_HYBRID_SLAM_TOOLBOX_CONFIG:-/spot_bringup/config/slam_toolbox_mrg_hybrid.yaml}"
+      MRG_HYBRID_USE_SIM_TIME: "${MRG_HYBRID_USE_SIM_TIME:-False}"
+      MRG_HYBRID_CLOUD_TOPIC: "${MRG_HYBRID_CLOUD_TOPIC:-/velodyne/points}"
+      MRG_HYBRID_RAW_SCAN_TOPIC: "${MRG_HYBRID_RAW_SCAN_TOPIC:-/slam_toolbox/scan_raw}"
+      MRG_HYBRID_SCAN_TOPIC: "${MRG_HYBRID_SCAN_TOPIC:-/slam_toolbox/scan}"
+      MRG_HYBRID_RESTAMP_SCAN: "${MRG_HYBRID_RESTAMP_SCAN:-True}"
+      MRG_HYBRID_LASERSCAN_TARGET_FRAME: "${MRG_HYBRID_LASERSCAN_TARGET_FRAME:-mrg_velodyne}"
+      MRG_HYBRID_SCAN_PARENT_FRAME: "${MRG_HYBRID_SCAN_PARENT_FRAME:-body}"
+      MRG_HYBRID_SCAN_FRAME: "${MRG_HYBRID_SCAN_FRAME:-slam_toolbox_velodyne}"
+      MRG_HYBRID_BASE_FRAME: "${MRG_HYBRID_BASE_FRAME:-body}"
+      MRG_HYBRID_ODOM_FRAME: "${MRG_HYBRID_ODOM_FRAME:-odom}"
+      MRG_HYBRID_MAP_FRAME: "${MRG_HYBRID_MAP_FRAME:-map}"
+      MRG_HYBRID_SCAN_X: "${MRG_HYBRID_SCAN_X:-0.0}"
+      MRG_HYBRID_SCAN_Y: "${MRG_HYBRID_SCAN_Y:-0.0}"
+      MRG_HYBRID_SCAN_Z: "${MRG_HYBRID_SCAN_Z:-0.25}"
+      MRG_HYBRID_SCAN_ROLL: "${MRG_HYBRID_SCAN_ROLL:-0.0}"
+      MRG_HYBRID_SCAN_PITCH: "${MRG_HYBRID_SCAN_PITCH:-0.0}"
+      MRG_HYBRID_SCAN_YAW: "${MRG_HYBRID_SCAN_YAW:-0.0}"
+      MRG_HYBRID_SCAN_MIN_HEIGHT: "${MRG_HYBRID_SCAN_MIN_HEIGHT:--0.15}"
+      MRG_HYBRID_SCAN_MAX_HEIGHT: "${MRG_HYBRID_SCAN_MAX_HEIGHT:-0.35}"
+      MRG_HYBRID_SCAN_ANGLE_INCREMENT: "${MRG_HYBRID_SCAN_ANGLE_INCREMENT:-0.008726646}"
+      MRG_HYBRID_SCAN_TIME: "${MRG_HYBRID_SCAN_TIME:-0.1}"
+      MRG_HYBRID_SCAN_RANGE_MIN: "${MRG_HYBRID_SCAN_RANGE_MIN:-0.8}"
+      MRG_HYBRID_SCAN_RANGE_MAX: "${MRG_HYBRID_SCAN_RANGE_MAX:-45.0}"
+      MRG_HYBRID_SCAN_TRANSFORM_TOLERANCE: "${MRG_HYBRID_SCAN_TRANSFORM_TOLERANCE:-0.25}"
+      MRG_HYBRID_TRANSFORM_PUBLISH_PERIOD: "${MRG_HYBRID_TRANSFORM_PUBLISH_PERIOD:-0.05}"
+    command:
+      - run_mrg_slam_toolbox_hybrid
+    stdin_open: true
+    tty: true
+
+  mrg-hybrid-map-align-bridge:
+    profiles: ["mrg-hybrid", "mrg-hybrid-rviz"]
+    image: spot_bringup_mrg:humble
+    container_name: mrg_hybrid_map_align_bridge
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - mrg-slam-hybrid
+      - mrg-slam-toolbox
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MRG_HYBRID_ALIGN_MAP_FRAME: "${MRG_HYBRID_ALIGN_MAP_FRAME:-map}"
+      MRG_HYBRID_ALIGN_SLAM_BASE_FRAME: "${MRG_HYBRID_ALIGN_SLAM_BASE_FRAME:-body}"
+      MRG_HYBRID_ALIGN_MRG_MAP_FRAME: "${MRG_HYBRID_ALIGN_MRG_MAP_FRAME:-mrg_map}"
+      MRG_HYBRID_ALIGN_MRG_BASE_FRAME: "${MRG_HYBRID_ALIGN_MRG_BASE_FRAME:-mrg_body}"
+      MRG_HYBRID_ALIGN_PUBLISH_RATE_HZ: "${MRG_HYBRID_ALIGN_PUBLISH_RATE_HZ:-20.0}"
+      MRG_HYBRID_ALIGN_LOOKUP_TIMEOUT_SEC: "${MRG_HYBRID_ALIGN_LOOKUP_TIMEOUT_SEC:-0.2}"
+      MRG_HYBRID_ALIGN_USE_MRG_Z: "${MRG_HYBRID_ALIGN_USE_MRG_Z:-True}"
+      MRG_HYBRID_ALIGN_USE_MRG_ROLL_PITCH: "${MRG_HYBRID_ALIGN_USE_MRG_ROLL_PITCH:-False}"
+      MRG_HYBRID_ALIGN_TRANSLATION_Z_OFFSET_M: "${MRG_HYBRID_ALIGN_TRANSLATION_Z_OFFSET_M:-0.0}"
+      MRG_HYBRID_ALIGN_TRANSLATION_FILTER_ALPHA: "${MRG_HYBRID_ALIGN_TRANSLATION_FILTER_ALPHA:-0.1}"
+      MRG_HYBRID_ALIGN_ROTATION_FILTER_ALPHA: "${MRG_HYBRID_ALIGN_ROTATION_FILTER_ALPHA:-0.1}"
+      MRG_HYBRID_ALIGN_TRANSLATION_DEADBAND_M: "${MRG_HYBRID_ALIGN_TRANSLATION_DEADBAND_M:-0.015}"
+      MRG_HYBRID_ALIGN_ROTATION_DEADBAND_RAD: "${MRG_HYBRID_ALIGN_ROTATION_DEADBAND_RAD:-0.01}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - mrg_map_align_bridge.py
+      - --ros-args
+      - -p
+      - map_frame:=${MRG_HYBRID_ALIGN_MAP_FRAME:-map}
+      - -p
+      - slam_base_frame:=${MRG_HYBRID_ALIGN_SLAM_BASE_FRAME:-body}
+      - -p
+      - mrg_map_frame:=${MRG_HYBRID_ALIGN_MRG_MAP_FRAME:-mrg_map}
+      - -p
+      - mrg_base_frame:=${MRG_HYBRID_ALIGN_MRG_BASE_FRAME:-mrg_body}
+      - -p
+      - publish_rate_hz:=${MRG_HYBRID_ALIGN_PUBLISH_RATE_HZ:-20.0}
+      - -p
+      - lookup_timeout_sec:=${MRG_HYBRID_ALIGN_LOOKUP_TIMEOUT_SEC:-0.2}
+      - -p
+      - use_mrg_z:=${MRG_HYBRID_ALIGN_USE_MRG_Z:-True}
+      - -p
+      - use_mrg_roll_pitch:=${MRG_HYBRID_ALIGN_USE_MRG_ROLL_PITCH:-False}
+      - -p
+      - translation_z_offset_m:=${MRG_HYBRID_ALIGN_TRANSLATION_Z_OFFSET_M:-0.0}
+      - -p
+      - translation_filter_alpha:=${MRG_HYBRID_ALIGN_TRANSLATION_FILTER_ALPHA:-0.1}
+      - -p
+      - rotation_filter_alpha:=${MRG_HYBRID_ALIGN_ROTATION_FILTER_ALPHA:-0.1}
+      - -p
+      - translation_deadband_m:=${MRG_HYBRID_ALIGN_TRANSLATION_DEADBAND_M:-0.015}
+      - -p
+      - rotation_deadband_rad:=${MRG_HYBRID_ALIGN_ROTATION_DEADBAND_RAD:-0.01}
+    stdin_open: true
+    tty: true
+
+  map-odom-bridge:
+    profiles: ["slam"]
+    image: spot_bringup_slam:humble
+    container_name: map_odom_bridge
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - mrg-slam
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MAP_ODOM_MAP_FRAME: "${MAP_ODOM_MAP_FRAME:-map}"
+      MAP_ODOM_SLAM_BASE_FRAME: "${MAP_ODOM_SLAM_BASE_FRAME:-slam_body}"
+      MAP_ODOM_SPOT_ODOM_FRAME: "${MAP_ODOM_SPOT_ODOM_FRAME:-odom}"
+      MAP_ODOM_SPOT_BASE_FRAME: "${MAP_ODOM_SPOT_BASE_FRAME:-body}"
+      MAP_ODOM_PUBLISH_RATE_HZ: "${MAP_ODOM_PUBLISH_RATE_HZ:-20.0}"
+      MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP: "${MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP:-True}"
+      MAP_ODOM_STAMP_WITH_SLAM_TIME: "${MAP_ODOM_STAMP_WITH_SLAM_TIME:-False}"
+      MAP_ODOM_TRANSLATION_FILTER_ALPHA: "${MAP_ODOM_TRANSLATION_FILTER_ALPHA:-1.0}"
+      MAP_ODOM_ROTATION_FILTER_ALPHA: "${MAP_ODOM_ROTATION_FILTER_ALPHA:-1.0}"
+      MAP_ODOM_TRANSLATION_DEADBAND_M: "${MAP_ODOM_TRANSLATION_DEADBAND_M:-0.0}"
+      MAP_ODOM_ROTATION_DEADBAND_RAD: "${MAP_ODOM_ROTATION_DEADBAND_RAD:-0.0}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - map_to_odom_tf_bridge.py
+      - --ros-args
+      - -p
+      - map_frame:=${MAP_ODOM_MAP_FRAME:-map}
+      - -p
+      - slam_base_frame:=${MAP_ODOM_SLAM_BASE_FRAME:-slam_body}
+      - -p
+      - spot_odom_frame:=${MAP_ODOM_SPOT_ODOM_FRAME:-odom}
+      - -p
+      - spot_base_frame:=${MAP_ODOM_SPOT_BASE_FRAME:-body}
+      - -p
+      - publish_rate_hz:=${MAP_ODOM_PUBLISH_RATE_HZ:-20.0}
+      - -p
+      - sync_odom_to_slam_stamp:=${MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP:-True}
+      - -p
+      - stamp_with_slam_time:=${MAP_ODOM_STAMP_WITH_SLAM_TIME:-False}
+      - -p
+      - translation_filter_alpha:=${MAP_ODOM_TRANSLATION_FILTER_ALPHA:-1.0}
+      - -p
+      - rotation_filter_alpha:=${MAP_ODOM_ROTATION_FILTER_ALPHA:-1.0}
+      - -p
+      - translation_deadband_m:=${MAP_ODOM_TRANSLATION_DEADBAND_M:-0.0}
+      - -p
+      - rotation_deadband_rad:=${MAP_ODOM_ROTATION_DEADBAND_RAD:-0.0}
+    stdin_open: true
+    tty: true
+
+  mrg-rviz:
+    profiles: ["slam", "rviz"]
+    image: spot_bringup_driver:humble
+    container_name: mrg_rviz
+    network_mode: host
+    depends_on:
+      - map-odom-bridge
+      - spot-driver
+      - mrg-slam
+    volumes:
+      - ./rviz:/spot_bringup/rviz:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+      MRG_RVIZ_CONFIG: "${MRG_RVIZ_CONFIG:-/spot_bringup/rviz/mrg_slam_spot.rviz}"
+    command:
+      - rviz2
+      - -d
+      - ${MRG_RVIZ_CONFIG:-/spot_bringup/rviz/mrg_slam_spot.rviz}
+    stdin_open: true
+    tty: true
+
+  mrg-hybrid-rviz:
+    profiles: ["mrg-hybrid-rviz"]
+    image: spot_bringup_driver:humble
+    container_name: mrg_hybrid_rviz
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - mrg-slam-hybrid
+      - mrg-slam-toolbox
+      - mrg-hybrid-map-align-bridge
+    volumes:
+      - ./rviz:/spot_bringup/rviz:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+      MRG_HYBRID_RVIZ_CONFIG: "${MRG_HYBRID_RVIZ_CONFIG:-/spot_bringup/rviz/mrg_hybrid_slam_toolbox.rviz}"
+    command:
+      - rviz2
+      - -d
+      - ${MRG_HYBRID_RVIZ_CONFIG:-/spot_bringup/rviz/mrg_hybrid_slam_toolbox.rviz}
+    stdin_open: true
+    tty: true
+
+  velodyne-rtabmap:
+    profiles: ["rtabmap", "rtabmap-rviz"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rtabmap
+    image: spot_bringup_rtabmap:humble
+    container_name: spot_velodyne_rtabmap
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      RTABMAP_VELODYNE_DEVICE_IP: "${RTABMAP_VELODYNE_DEVICE_IP:-192.168.1.201}"
+      RTABMAP_VELODYNE_PACKETS_TOPIC: "${RTABMAP_VELODYNE_PACKETS_TOPIC:-/rtabmap/velodyne_packets}"
+      RTABMAP_VELODYNE_POINTS_TOPIC: "${RTABMAP_VELODYNE_POINTS_TOPIC:-/rtabmap/velodyne_points}"
+      RTABMAP_VELODYNE_MOLA_POINTS_TOPIC: "${RTABMAP_VELODYNE_MOLA_POINTS_TOPIC:-/rtabmap/velodyne_points_mola}"
+      RTABMAP_VELODYNE_FRAME: "${RTABMAP_VELODYNE_FRAME:-rtabmap_velodyne}"
+      RTABMAP_VELODYNE_PARENT_FRAME: "${RTABMAP_VELODYNE_PARENT_FRAME:-rtabmap_body}"
+      RTABMAP_VELODYNE_X: "${RTABMAP_VELODYNE_X:-0.0}"
+      RTABMAP_VELODYNE_Y: "${RTABMAP_VELODYNE_Y:-0.0}"
+      RTABMAP_VELODYNE_Z: "${RTABMAP_VELODYNE_Z:-0.25}"
+      RTABMAP_VELODYNE_ROLL: "${RTABMAP_VELODYNE_ROLL:-0.0}"
+      RTABMAP_VELODYNE_PITCH: "${RTABMAP_VELODYNE_PITCH:-0.0}"
+      RTABMAP_VELODYNE_YAW: "${RTABMAP_VELODYNE_YAW:-0.0}"
+    command:
+      - ros2
+      - launch
+      - spot_velodyne_config
+      - velodyne_vlp16.launch.py
+      - device_ip:=${RTABMAP_VELODYNE_DEVICE_IP:-192.168.1.201}
+      - packets_topic:=${RTABMAP_VELODYNE_PACKETS_TOPIC:-/rtabmap/velodyne_packets}
+      - points_topic:=${RTABMAP_VELODYNE_POINTS_TOPIC:-/rtabmap/velodyne_points}
+      - mola_points_topic:=${RTABMAP_VELODYNE_MOLA_POINTS_TOPIC:-/rtabmap/velodyne_points_mola}
+      - frame_id:=${RTABMAP_VELODYNE_FRAME:-rtabmap_velodyne}
+      - parent_frame:=${RTABMAP_VELODYNE_PARENT_FRAME:-rtabmap_body}
+      - x:=${RTABMAP_VELODYNE_X:-0.0}
+      - y:=${RTABMAP_VELODYNE_Y:-0.0}
+      - z:=${RTABMAP_VELODYNE_Z:-0.25}
+      - roll:=${RTABMAP_VELODYNE_ROLL:-0.0}
+      - pitch:=${RTABMAP_VELODYNE_PITCH:-0.0}
+      - yaw:=${RTABMAP_VELODYNE_YAW:-0.0}
+    stdin_open: true
+    tty: true
+
+  rtabmap:
+    profiles: ["rtabmap", "rtabmap-rviz"]
+    build:
+      context: .
+      dockerfile: Dockerfile.rtabmap
+    image: spot_bringup_rtabmap:humble
+    container_name: rtabmap
+    network_mode: host
+    depends_on:
+      - velodyne-rtabmap
+    volumes:
+      - ./maps:/spot_bringup/maps:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      RTABMAP_NAMESPACE: "${RTABMAP_NAMESPACE:-rtabmap}"
+      RTABMAP_SCAN_CLOUD_TOPIC: "${RTABMAP_SCAN_CLOUD_TOPIC:-/rtabmap/velodyne_points}"
+      RTABMAP_FRAME_ID: "${RTABMAP_FRAME_ID:-rtabmap_body}"
+      RTABMAP_ODOM_FRAME_ID: "${RTABMAP_ODOM_FRAME_ID:-rtabmap_odom}"
+      RTABMAP_MAP_FRAME_ID: "${RTABMAP_MAP_FRAME_ID:-map}"
+      RTABMAP_DATABASE_PATH: "${RTABMAP_DATABASE_PATH:-/spot_bringup/maps/rtabmap_spot.db}"
+      RTABMAP_DELETE_DB_ON_START: "${RTABMAP_DELETE_DB_ON_START:-True}"
+      RTABMAP_DETECTION_RATE: "${RTABMAP_DETECTION_RATE:-2.0}"
+      RTABMAP_QOS: "${RTABMAP_QOS:-2}"
+      RTABMAP_WAIT_FOR_TRANSFORM: "${RTABMAP_WAIT_FOR_TRANSFORM:-0.3}"
+      RTABMAP_VOXEL_SIZE: "${RTABMAP_VOXEL_SIZE:-0.15}"
+      RTABMAP_MAX_CORRESPONDENCE_DISTANCE: "${RTABMAP_MAX_CORRESPONDENCE_DISTANCE:-1.5}"
+      RTABMAP_RANGE_MIN: "${RTABMAP_RANGE_MIN:-0.9}"
+      RTABMAP_RANGE_MAX: "${RTABMAP_RANGE_MAX:-50.0}"
+      RTABMAP_GLOBAL_MAP_ASSEMBLER_ENABLED: "${RTABMAP_GLOBAL_MAP_ASSEMBLER_ENABLED:-True}"
+      RTABMAP_GLOBAL_MAP_REGENERATE_LOCAL_GRIDS: "${RTABMAP_GLOBAL_MAP_REGENERATE_LOCAL_GRIDS:-False}"
+      RTABMAP_GLOBAL_CLOUD_TOPIC: "${RTABMAP_GLOBAL_CLOUD_TOPIC:-/rtabmap/global_cloud_map}"
+      RTABMAP_GLOBAL_GRID_TOPIC: "${RTABMAP_GLOBAL_GRID_TOPIC:-/rtabmap/global_grid_prob_map}"
+      RTABMAP_OCTOMAP_TREE_DEPTH: "${RTABMAP_OCTOMAP_TREE_DEPTH:-16}"
+      RTABMAP_LIVE_CLOUD_ASSEMBLER_ENABLED: "${RTABMAP_LIVE_CLOUD_ASSEMBLER_ENABLED:-False}"
+      RTABMAP_LIVE_CLOUD_TOPIC: "${RTABMAP_LIVE_CLOUD_TOPIC:-/rtabmap/live_cloud_map}"
+      RTABMAP_LIVE_CLOUD_MAX_CLOUDS: "${RTABMAP_LIVE_CLOUD_MAX_CLOUDS:-20}"
+      RTABMAP_LIVE_CLOUD_SKIP_CLOUDS: "${RTABMAP_LIVE_CLOUD_SKIP_CLOUDS:-1}"
+      RTABMAP_LIVE_CLOUD_LINEAR_UPDATE: "${RTABMAP_LIVE_CLOUD_LINEAR_UPDATE:-0.10}"
+      RTABMAP_LIVE_CLOUD_ANGULAR_UPDATE: "${RTABMAP_LIVE_CLOUD_ANGULAR_UPDATE:-0.0872665}"
+      RTABMAP_LIVE_CLOUD_WAIT_FOR_TRANSFORM: "${RTABMAP_LIVE_CLOUD_WAIT_FOR_TRANSFORM:-1.0}"
+      RTABMAP_LIVE_CLOUD_VOXEL_SIZE: "${RTABMAP_LIVE_CLOUD_VOXEL_SIZE:-0.10}"
+      RTABMAP_LIVE_CLOUD_NOISE_RADIUS: "${RTABMAP_LIVE_CLOUD_NOISE_RADIUS:-0.0}"
+      RTABMAP_LIVE_CLOUD_NOISE_MIN_NEIGHBORS: "${RTABMAP_LIVE_CLOUD_NOISE_MIN_NEIGHBORS:-5}"
+      RTABMAP_LOG_LEVEL: "${RTABMAP_LOG_LEVEL:-info}"
+    command:
+      - run_rtabmap
+    stdin_open: true
+    tty: true
+
+  rtabmap-map-odom-bridge:
+    profiles: ["rtabmap", "rtabmap-rviz"]
+    image: spot_bringup_rtabmap:humble
+    container_name: rtabmap_map_odom_bridge
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - rtabmap
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      RTABMAP_MAP_ODOM_MAP_FRAME: "${RTABMAP_MAP_ODOM_MAP_FRAME:-map}"
+      RTABMAP_MAP_ODOM_SLAM_BASE_FRAME: "${RTABMAP_MAP_ODOM_SLAM_BASE_FRAME:-rtabmap_body}"
+      RTABMAP_MAP_ODOM_SPOT_ODOM_FRAME: "${RTABMAP_MAP_ODOM_SPOT_ODOM_FRAME:-odom}"
+      RTABMAP_MAP_ODOM_SPOT_BASE_FRAME: "${RTABMAP_MAP_ODOM_SPOT_BASE_FRAME:-body}"
+      RTABMAP_MAP_ODOM_PUBLISH_RATE_HZ: "${RTABMAP_MAP_ODOM_PUBLISH_RATE_HZ:-20.0}"
+      RTABMAP_MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP: "${RTABMAP_MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP:-True}"
+      RTABMAP_MAP_ODOM_STAMP_WITH_SLAM_TIME: "${RTABMAP_MAP_ODOM_STAMP_WITH_SLAM_TIME:-False}"
+      RTABMAP_MAP_ODOM_TRANSLATION_FILTER_ALPHA: "${RTABMAP_MAP_ODOM_TRANSLATION_FILTER_ALPHA:-1.0}"
+      RTABMAP_MAP_ODOM_ROTATION_FILTER_ALPHA: "${RTABMAP_MAP_ODOM_ROTATION_FILTER_ALPHA:-1.0}"
+      RTABMAP_MAP_ODOM_TRANSLATION_DEADBAND_M: "${RTABMAP_MAP_ODOM_TRANSLATION_DEADBAND_M:-0.0}"
+      RTABMAP_MAP_ODOM_ROTATION_DEADBAND_RAD: "${RTABMAP_MAP_ODOM_ROTATION_DEADBAND_RAD:-0.0}"
+      RTABMAP_MAP_ODOM_YAW_ONLY: "${RTABMAP_MAP_ODOM_YAW_ONLY:-True}"
+      RTABMAP_MAP_ODOM_LOCK_Z: "${RTABMAP_MAP_ODOM_LOCK_Z:-True}"
+      RTABMAP_MAP_ODOM_TRANSLATION_Z_OFFSET_M: "${RTABMAP_MAP_ODOM_TRANSLATION_Z_OFFSET_M:-0.45}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - map_to_odom_tf_bridge.py
+      - --ros-args
+      - -p
+      - map_frame:=${RTABMAP_MAP_ODOM_MAP_FRAME:-map}
+      - -p
+      - slam_base_frame:=${RTABMAP_MAP_ODOM_SLAM_BASE_FRAME:-rtabmap_body}
+      - -p
+      - spot_odom_frame:=${RTABMAP_MAP_ODOM_SPOT_ODOM_FRAME:-odom}
+      - -p
+      - spot_base_frame:=${RTABMAP_MAP_ODOM_SPOT_BASE_FRAME:-body}
+      - -p
+      - publish_rate_hz:=${RTABMAP_MAP_ODOM_PUBLISH_RATE_HZ:-20.0}
+      - -p
+      - sync_odom_to_slam_stamp:=${RTABMAP_MAP_ODOM_SYNC_ODOM_TO_SLAM_STAMP:-True}
+      - -p
+      - stamp_with_slam_time:=${RTABMAP_MAP_ODOM_STAMP_WITH_SLAM_TIME:-False}
+      - -p
+      - translation_filter_alpha:=${RTABMAP_MAP_ODOM_TRANSLATION_FILTER_ALPHA:-1.0}
+      - -p
+      - rotation_filter_alpha:=${RTABMAP_MAP_ODOM_ROTATION_FILTER_ALPHA:-1.0}
+      - -p
+      - translation_deadband_m:=${RTABMAP_MAP_ODOM_TRANSLATION_DEADBAND_M:-0.0}
+      - -p
+      - rotation_deadband_rad:=${RTABMAP_MAP_ODOM_ROTATION_DEADBAND_RAD:-0.0}
+      - -p
+      - yaw_only:=${RTABMAP_MAP_ODOM_YAW_ONLY:-True}
+      - -p
+      - lock_z:=${RTABMAP_MAP_ODOM_LOCK_Z:-True}
+      - -p
+      - translation_z_offset_m:=${RTABMAP_MAP_ODOM_TRANSLATION_Z_OFFSET_M:-0.45}
+    stdin_open: true
+    tty: true
+
+  rtabmap-rviz:
+    profiles: ["rtabmap-rviz"]
+    image: spot_bringup_driver:humble
+    container_name: rtabmap_rviz
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - rtabmap-map-odom-bridge
+    volumes:
+      - ./rviz:/spot_bringup/rviz:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+      RTABMAP_RVIZ_CONFIG: "${RTABMAP_RVIZ_CONFIG:-/spot_bringup/rviz/rtabmap_spot.rviz}"
+    command:
+      - rviz2
+      - -d
+      - ${RTABMAP_RVIZ_CONFIG:-/spot_bringup/rviz/rtabmap_spot.rviz}
+    stdin_open: true
+    tty: true
+
+  mola-lo:
+    profiles: ["slam"]
+    image: spot_bringup_slam:humble
+    container_name: mola_lo
+    network_mode: host
+    depends_on:
+      - velodyne
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      MOLA_LIDAR_TOPIC: "${MOLA_LIDAR_TOPIC:-/velodyne/points_mola}"
+      MOLA_TF_BASE_LINK: "${MOLA_TF_BASE_LINK:-slam_body}"
+      MOLA_USE_MOLA_GUI: "${MOLA_USE_MOLA_GUI:-False}"
+      MOLA_USE_RVIZ: "${MOLA_USE_RVIZ:-False}"
+      MOLA_PUBLISH_REP105: "${MOLA_PUBLISH_REP105:-True}"
+      MOLA_IGNORE_LIDAR_POSE_FROM_TF: "${MOLA_IGNORE_LIDAR_POSE_FROM_TF:-False}"
+      MOLA_GENERATE_SIMPLEMAP: "${MOLA_GENERATE_SIMPLEMAP:-True}"
+    command:
+      - run_mola_lo
+    stdin_open: true
+    tty: true
+
+  # ── FAST-LIO2 (spark-fast-lio) profile ──────────────────────────────────
+
+  velodyne-fastlio:
+    profiles: ["fastlio", "fastlio-rviz", "fastlio-bridge"]
+    image: spot_bringup_slam:humble
+    container_name: spot_velodyne_fastlio
+    network_mode: host
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+    command:
+      - ros2
+      - launch
+      - spot_velodyne_config
+      - velodyne_vlp16.launch.py
+      - device_ip:=${FAST_LIO_VELODYNE_DEVICE_IP:-192.168.1.201}
+      - frame_id:=${FAST_LIO_VELODYNE_FRAME:-fastlio_velodyne}
+      - parent_frame:=${FAST_LIO_VELODYNE_PARENT_FRAME:-fastlio_body}
+      - x:=${FAST_LIO_VELODYNE_X:-0.0}
+      - y:=${FAST_LIO_VELODYNE_Y:-0.0}
+      - z:=${FAST_LIO_VELODYNE_Z:-0.25}
+      - roll:=${FAST_LIO_VELODYNE_ROLL:-0.0}
+      - pitch:=${FAST_LIO_VELODYNE_PITCH:-0.0}
+      - yaw:=${FAST_LIO_VELODYNE_YAW:-0.0}
+    stdin_open: true
+    tty: true
+
+  fastlio-imu:
+    profiles: ["fastlio", "fastlio-rviz", "fastlio-bridge"]
+    build:
+      context: .
+      dockerfile: Dockerfile.fastlio
+    image: spot_bringup_fastlio:humble
+    container_name: fastlio_imu
+    network_mode: host
+    depends_on:
+      - spot-driver
+    volumes:
+      - ./secrets:/run/spot-secrets:ro
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_HOSTNAME: "${SPOT_HOSTNAME:-192.168.80.3}"
+      SPOT_USERNAME: "${SPOT_USERNAME:-user}"
+      SPOT_PASSWORD: "${SPOT_PASSWORD:-}"
+      SPOT_PASSWORD_FILE: "${SPOT_PASSWORD_FILE:-/run/spot-secrets/spot_password.txt}"
+      LIO_SAM_IMU_TOPIC: "${FAST_LIO_IMU_TOPIC:-/fast_lio/imu}"
+      SPOT_SDK_IMU_FRAME: "${FAST_LIO_IMU_FRAME:-fastlio_body}"
+      SPOT_SDK_IMU_SOURCE_MODE: "${FAST_LIO_IMU_SOURCE_MODE:-auto}"
+      SPOT_SDK_IMU_FALLBACK_RATE_HZ: "${FAST_LIO_IMU_FALLBACK_RATE_HZ:-100.0}"
+      SPOT_SDK_IMU_FALLBACK_USE_VELOCITY_DERIVATIVE: "${FAST_LIO_IMU_FALLBACK_USE_VELOCITY_DERIVATIVE:-False}"
+      SPOT_SDK_IMU_ADD_GRAVITY: "${FAST_LIO_IMU_ADD_GRAVITY:-True}"
+      SPOT_SDK_IMU_GRAVITY: "${FAST_LIO_IMU_GRAVITY:-9.80511}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - spot_sdk_imu_publisher.py
+    stdin_open: true
+    tty: true
+
+  fast-lio:
+    profiles: ["fastlio", "fastlio-rviz", "fastlio-bridge"]
+    image: spot_bringup_fastlio:humble
+    container_name: fast_lio
+    network_mode: host
+    depends_on:
+      - fastlio-imu
+      - velodyne-fastlio
+    volumes:
+      - ./config:/spot_bringup/config:ro
+      - ./maps:/spot_bringup/maps:rw
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      FAST_LIO_CONFIG: "${FAST_LIO_CONFIG:-/spot_bringup/config/fast_lio_spot.yaml}"
+      FAST_LIO_LIDAR_TOPIC: "${FAST_LIO_LIDAR_TOPIC:-/velodyne/points}"
+      FAST_LIO_IMU_TOPIC: "${FAST_LIO_IMU_TOPIC:-/fast_lio/imu}"
+    command:
+      - run_fast_lio
+    stdin_open: true
+    tty: true
+
+  fastlio-map-odom-bridge:
+    profiles: ["fastlio-bridge", "fastlio-rviz"]
+    image: spot_bringup_fastlio:humble
+    container_name: fastlio_map_odom_bridge
+    network_mode: host
+    depends_on:
+      - fast-lio
+      - spot-driver
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+    command:
+      - ros2
+      - run
+      - spot_velodyne_config
+      - map_to_odom_tf_bridge.py
+      - --ros-args
+      - -p
+      - map_frame:=${FAST_LIO_MAP_ODOM_MAP_FRAME:-fastlio_map}
+      - -p
+      - slam_base_frame:=${FAST_LIO_MAP_ODOM_SLAM_BASE_FRAME:-fastlio_body}
+      - -p
+      - spot_odom_frame:=${FAST_LIO_MAP_ODOM_SPOT_ODOM_FRAME:-odom}
+      - -p
+      - spot_base_frame:=${FAST_LIO_MAP_ODOM_SPOT_BASE_FRAME:-body}
+      - -p
+      - publish_rate_hz:=${FAST_LIO_MAP_ODOM_PUBLISH_RATE_HZ:-20.0}
+    stdin_open: true
+    tty: true
+
+  fastlio-rviz:
+    profiles: ["fastlio-rviz"]
+    image: spot_bringup_driver:humble
+    container_name: fastlio_rviz
+    network_mode: host
+    depends_on:
+      - spot-driver
+      - fast-lio
+      - fastlio-map-odom-bridge
+    volumes:
+      - ./rviz:/spot_bringup/rviz:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${HOME}/.Xauthority:/root/.Xauthority:ro
+    environment:
+      DISPLAY: "${DISPLAY:-}"
+      XAUTHORITY: /root/.Xauthority
+      QT_X11_NO_MITSHM: "1"
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-17}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      DDS_INTERFACE: "${DDS_INTERFACE:-}"
+      DDS_PEERS: "${DDS_PEERS:-}"
+      SPOT_NAME: "${SPOT_NAME:-}"
+      SPOT_FRAME_PREFIX: "${SPOT_FRAME_PREFIX:-}"
+      RENDER_SPOT_CONFIG: "0"
+    command:
+      - rviz2
+      - -d
+      - ${FAST_LIO_RVIZ_CONFIG:-/spot_bringup/rviz/fast_lio_spot.rviz}
     stdin_open: true
     tty: true

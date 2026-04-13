@@ -1,0 +1,65 @@
+# Spot VLP-16 profile for FAST-LIO2 (spark-fast-lio fork).
+# Uses Spot SDK synthetic IMU (gravity + angular velocity from kinematic state).
+# Keep this separate from config/mrg_slam_spot.yaml and config/lio_sam_spot.yaml.
+
+/**:
+  ros__parameters:
+    # Frames — spark-fast-lio reads these as common.* ROS params.
+    common:
+      lidar_frame: "fastlio_velodyne"
+      imu_frame: "fastlio_body"
+      map_frame: "fastlio_map"
+      base_frame: "fastlio_body"
+      visualization_frame: "imu"
+
+    # Gravity alignment from spark-fast-lio.
+    # Disabled: our synthetic IMU already provides Spot-estimator orientation,
+    # so the initial gravity vector is implicit in the first IMU samples.
+    gravity_alignment:
+      enable_gravity_alignment: false
+
+    preprocess:
+      lidar_type: 2               # 1=Livox, 2=Velodyne, 3=Ouster
+      scan_line: 16               # VLP-16 has 16 scan lines
+      scan_rate: 10               # 10 Hz spin rate
+      timestamp_unit: 0           # /velodyne/points.time is in seconds on this stack
+      blind: 0.5                  # Reject points closer than 0.5 m
+
+    mapping:
+      # IMU noise tuned for Spot SDK synthetic accelerometer (gravity-only, no dynamic accel).
+      # High acc_cov tells the EKF to rely on LiDAR for position; IMU contributes gravity direction.
+      acc_cov: 3.0
+      gyr_cov: 0.1
+      b_acc_cov: 0.01
+      b_gyr_cov: 0.0001
+      fov_degree: 360.0           # VLP-16 360-degree horizontal FOV
+      det_range: 100.0            # Max detection range (m)
+      extrinsic_est_en: false     # Do not online-estimate extrinsics with synthetic IMU
+
+      # LiDAR position in IMU (body) frame: Velodyne is 0.25 m above body center.
+      extrinsic_T: [ 0.0, 0.0, 0.25 ]
+      extrinsic_R: [ 1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0 ]
+
+    # Map voxel filter resolution (m).
+    filter_size_map: 0.3
+
+    # Point sampling: use every 3rd point for pose estimation (VLP-16 has fewer points than VLP-32).
+    point_filter_num: 3
+    max_iteration: 4
+    cube_side_length: 1000.0
+    runtime_pos_log_enable: false
+    verbose: true
+
+    publish:
+      path_en: true
+      scan_publish_en: true
+      dense_publish_en: true
+      scan_lidarframe_pub_en: true
+      scan_bodyframe_pub_en: true
+      scan_baseframe_pub_en: false
+
+    pcd_save:
+      pcd_save_en: false
+      interval: -1                # -1 = all frames in one PCD file when saving

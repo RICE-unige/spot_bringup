@@ -1,0 +1,5 @@
+repositories:
+  spark_fast_lio:
+    type: git
+    url: https://github.com/MIT-SPARK/spark-fast-lio.git
+    version: 17b36d293a14df37d57e1751a337a32e2f164692

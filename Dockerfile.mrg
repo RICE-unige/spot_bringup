@@ -1,0 +1,70 @@
+FROM osrf/ros:humble-desktop
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV SHELL=/bin/bash
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gettext-base \
+    git \
+    libceres-dev \
+    libgeographic-dev \
+    python3-colcon-common-extensions \
+    python3-vcstool \
+    ros-humble-geodesy \
+    ros-humble-interactive-markers \
+    ros-humble-libg2o \
+    ros-humble-nmea-msgs \
+    ros-humble-pcl-conversions \
+    ros-humble-pcl-ros \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-tf2 \
+    ros-humble-tf2-geometry-msgs \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-sensor-msgs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /mrg_ws
+COPY mrg_slam.repos /tmp/mrg_slam.repos
+RUN mkdir -p src \
+    && vcs import src < /tmp/mrg_slam.repos
+
+# Upstream floor integration fixes:
+# - FloorDetectionComponent declares enable_normal_filtering but reads use_normal_filtering.
+# - FloorDetectionComponent publishes floor_detection/floor_coeffs while FloorCoeffsProcessor subscribes to floor_coeffs.
+RUN sed -i 's/use_normal_filtering/enable_normal_filtering/g' \
+    /mrg_ws/src/mrg_slam/apps/floor_detection_component.cpp \
+    && sed -i 's#"floor_coeffs"#"floor_detection/floor_coeffs"#g' \
+    /mrg_ws/src/mrg_slam/src/mrg_slam/floor_coeffs_processor.cpp
+
+WORKDIR /mrg_ws
+RUN source /opt/ros/humble/setup.bash \
+    && export MAKEFLAGS="-j 2" \
+    && colcon build --symlink-install --parallel-workers 2 --executor sequential \
+       --packages-select small_gicp mrg_slam mrg_slam_msgs fast_gicp ndt_omp
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-pointcloud-to-laserscan \
+    ros-humble-slam-toolbox \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ros2_ws/src
+COPY ros2_ws/src/spot_velodyne_config ./spot_velodyne_config
+
+WORKDIR /ros2_ws
+RUN source /opt/ros/humble/setup.bash \
+    && colcon build --symlink-install --packages-select spot_velodyne_config
+
+COPY tools/render_cyclonedds_config.sh /usr/local/bin/render_cyclonedds_config
+COPY tools/slam_entrypoint.sh /usr/local/bin/slam_entrypoint
+COPY tools/run_mrg_slam.sh /usr/local/bin/run_mrg_slam
+COPY tools/run_mrg_slam_toolbox_hybrid.sh /usr/local/bin/run_mrg_slam_toolbox_hybrid
+RUN chmod +x \
+    /usr/local/bin/render_cyclonedds_config \
+    /usr/local/bin/slam_entrypoint \
+    /usr/local/bin/run_mrg_slam \
+    /usr/local/bin/run_mrg_slam_toolbox_hybrid
+
+ENTRYPOINT ["/usr/local/bin/slam_entrypoint"]
+CMD ["bash"]

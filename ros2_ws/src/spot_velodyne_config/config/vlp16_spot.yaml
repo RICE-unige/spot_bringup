@@ -1,0 +1,20 @@
+velodyne_driver:
+  ros__parameters:
+    device_ip: "192.168.1.201"
+    frame_id: "velodyne"
+    model: "VLP16"
+    rpm: 600.0
+    port: 2368
+    gps_time: false
+    timestamp_first_packet: true
+
+velodyne_transform:
+  ros__parameters:
+    calibration: "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16db.yaml"
+    model: "VLP16"
+    min_range: 0.9
+    max_range: 130.0
+    view_direction: 0.0
+    fixed_frame: ""
+    target_frame: ""
+    organize_cloud: false
