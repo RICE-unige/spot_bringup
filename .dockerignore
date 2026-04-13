@@ -1,0 +1,17 @@
+.git
+**/.git
+**/__pycache__
+**/*.pyc
+.env
+*.env
+secrets/*
+!secrets/.gitkeep
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
+ros2_ws/src/spark-fast-lio
+spot_ros2/ros_utilities
+experiments
+*.bag
+*.db3
+*.zip

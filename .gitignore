@@ -1,32 +1,50 @@
-# Environment files with credentials
+# Credentials and generated local config
 .env
 *.env
+secrets/*
+!secrets/.gitkeep
+config/spot_config.generated.yaml
+
+# ROS generated artifacts
+build/
+install/
+log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Robot data captures
+*.bag
+*.db3
+*.mcap
+*.pcd
+*.simplemap
+*.mm
+*.zip
+maps/*
+!maps/.gitkeep
+graphs/*
+!graphs/.gitkeep
 
 # Logs and temporary files
 logs/
 *.log
 *.tmp
 
-# IDE and editor files
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# IDE and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.egg-info/
-
-# ROS
-build/
-install/
-log/
+.runtime/
+/fast_lio_spot.rviz
