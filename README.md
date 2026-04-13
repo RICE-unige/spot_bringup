@@ -1,300 +1,299 @@
 # Spot ROS2 Bringup
 
-[![MIT License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue?logo=ros&logoColor=white)](https://docs.ros.org/en/humble/)
+![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?logo=docker&logoColor=white)
+![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-22314E?logo=ros&logoColor=white)
+![Spot SDK](https://img.shields.io/badge/Spot%20SDK-5.0.1-0F766E)
+![3D Mapping](https://img.shields.io/badge/mrg__slam-Supported-0F766E)
+![Hybrid SLAM](https://img.shields.io/badge/mrg%2Bslam__toolbox-Experimental-D97706)
+![RTAB-Map](https://img.shields.io/badge/RTAB--Map-Experimental-D97706)
+![SLAM](https://img.shields.io/badge/MOLA-Experimental-D97706)
+![LIO-SAM](https://img.shields.io/badge/LIO--SAM-Experimental-D97706)
 
-Docker-based deployment for Boston Dynamics Spot ROS2 driver with RViz visualization.
+Docker-based bringup for Boston Dynamics Spot with a ROS 2 driver path, optional RViz, external Velodyne VLP-16 support, a supported `mrg_slam` 3D mapping workflow, and several experimental SLAM paths.
 
-## Prerequisites
+## Overview
 
-- Docker (>= 20.10)
-- Network access to Spot robot
-- X11/VNC server for RViz (optional)
+This repository is the lab bringup stack for the RICELab Spot platform.
+
+Default behavior is intentionally conservative:
+
+- no automatic lease claim
+- no automatic power on
+- no automatic stand
+- no autonomous motion
+
+Containers use `network_mode: host`, so ROS 2 topics are visible from other machines on the same DDS settings.
+
+> [!IMPORTANT]
+> This repository is a bringup and mapping stack. It is not the full motion-control stack for Spot.
 
 ## Quick Start
 
 ```bash
-# Clone with submodules
 git clone --recursive https://github.com/RICE-unige/spot_bringup.git
 cd spot_bringup
 
-# Configure credentials
 cp .env.example .env
-vim .env  # Edit with your Spot's IP, username, password
-
-# Build image
-docker build -t spot_ros2_rviz:latest .
-
-# Enable X11 (for RViz)
-xhost +local:docker
-
-# Start driver
-docker-compose up #for the RICELab spot, skip the other steps and start from here. 
+mkdir -p secrets
+printf '%s' 'your_spot_password' > secrets/spot_password.txt
+chmod 600 secrets/spot_password.txt
 ```
 
-## 📁 Repository Structure
-
-```
-spot_bringup/
-├── spot_ros2/              # Submodule - upstream spot_ros2 driver
-├── config/
-│   └── spot_config.yaml    # Driver configuration
-├── Dockerfile              # Image with ROS2 Humble + Spot SDK + RViz2
-├── docker-compose.yaml     # Container orchestration
-├── .env.example           # Credentials template
-└── .gitignore             # Protects .env
-```
-
-## Setup
-
-### 1. Clone Repository
+Build the supported images:
 
 ```bash
-git clone --recursive https://github.com/RICE-unige/spot_bringup.git
-cd spot_bringup
+DOCKER_BUILDKIT=0 docker build -f Dockerfile -t spot_bringup_driver:humble .
+DOCKER_BUILDKIT=0 docker build -f Dockerfile.slam -t spot_bringup_slam:humble .
+DOCKER_BUILDKIT=0 docker build -f Dockerfile.mrg -t spot_bringup_mrg:humble .
 ```
 
-> [!IMPORTANT]
-> The `--recursive` flag is required to fetch the `spot_ros2` submodule and its nested submodules.
+Start the driver:
 
-If already cloned without `--recursive`:
 ```bash
-git submodule update --init --recursive
+docker compose up -d spot-driver
 ```
 
-### 2. Configure Credentials
+On the RICELab SpotCORE, the repository already lives at:
 
-**Option A: Environment variables (Recommended)**
 ```bash
-cp .env.example .env
-vim .env
+cd /home/spot/spot_bringup
 ```
 
-Edit `.env`:
+> [!NOTE]
+> On the current SpotCORE host, `docker compose build` is unreliable. Use the explicit `DOCKER_BUILDKIT=0 docker build ...` commands above.
+
+## Required Configuration
+
+Create `.env` from `.env.example` and set the values you actually need:
+
 ```bash
-DISPLAY=:15100              # Your VNC/X11 display
+SPOT_HOSTNAME=192.168.80.3
+SPOT_USERNAME=user
+SPOT_PASSWORD_FILE=/run/spot-secrets/spot_password.txt
 SPOT_NAME=spot
-BOSDYN_CLIENT_USERNAME=user
-BOSDYN_CLIENT_PASSWORD=your_password
-SPOT_IP=192.168.80.3
+
+ROS_DOMAIN_ID=17
+DISPLAY=:15100
 ```
 
-**Option B: Configuration file**
+Notes:
 
-Edit `config/spot_config.yaml`:
-```yaml
-username: "user"
-password: "your_password"  
-hostname: "192.168.80.3"
+- keep the real password in `./secrets/spot_password.txt`
+- keep `SPOT_PASSWORD_FILE=/run/spot-secrets/spot_password.txt`
+- keep `SPOT_NAME=spot` unless you have a reason to remove the namespace
+- if `SPOT_NAME=` is empty, clear the robot name field in the RViz Spot panel
+
+The mapping paths assume the external Velodyne is reachable at:
+
+```text
+192.168.1.201
 ```
 
-### 3. Build Docker Image
+## Supported Paths
+
+| Path | Command | Status | Purpose |
+| --- | --- | --- | --- |
+| Spot driver | `docker compose up -d spot-driver` | Supported | Spot state, TF, cameras, diagnostics |
+| RViz | `docker compose --profile rviz up -d spot-driver spot-rviz` | Supported | Basic Spot visualization |
+| Velodyne | `docker compose --profile slam up -d velodyne` | Supported | VLP-16 packets and point cloud |
+| mrg_slam | `docker compose --profile slam up -d velodyne mrg-slam` | Supported | Main 3D LiDAR mapping path |
+| mrg_slam RViz | `docker compose --profile slam --profile rviz up -d mrg-rviz` | Supported | 3D mapping view with Spot control panel |
+| Stop all bringup containers | `./tools/stop_all.sh` | Supported | Clean shutdown across profiles |
+
+## Experimental Paths
+
+Build extra images only if you need these paths:
 
 ```bash
-docker build -t spot_ros2_rviz:latest .
-# or with sudo
-sudo docker build -t spot_ros2_rviz:latest .
+DOCKER_BUILDKIT=0 docker build -f Dockerfile.rtabmap -t spot_bringup_rtabmap:humble .
+DOCKER_BUILDKIT=0 docker build -f Dockerfile.liosam -t spot_bringup_liosam:humble .
 ```
 
-### 4. Enable X11 (for RViz)
-
-```bash
-# For VNC (adjust display number)
-DISPLAY=:15100 xhost +local:docker
-
-# For X11
-xhost +local:docker
-```
-
-## Usage
-
-### Start Driver
-
-```bash
-docker-compose up          # Foreground
-docker-compose up -d       # Background
-```
-
-### Stop Driver
-
-```bash
-docker-compose down
-```
-
-### Access Container
-
-```bash
-docker exec -it spot_driver bash
-```
-
-### View Logs
-
-```bash
-docker-compose logs -f
-```
-
-## RViz Control
+| Path | Command | Status | Purpose |
+| --- | --- | --- | --- |
+| MRG + slam_toolbox | `docker compose --profile mrg-hybrid up -d` | Experimental | 2D occupancy map plus aligned 3D MRG map |
+| MRG + slam_toolbox RViz | `docker compose --profile mrg-hybrid-rviz up -d` | Experimental | Hybrid view with 2D map, 3D map, TF, and Spot panel |
+| RTAB-Map | `docker compose --profile rtabmap up -d spot-driver velodyne-rtabmap rtabmap rtabmap-map-odom-bridge` | Experimental | LiDAR ICP SLAM comparison path |
+| RTAB-Map RViz | `docker compose --profile rtabmap-rviz up -d rtabmap-rviz` | Experimental | RTAB-Map visualization |
+| MOLA LO | `docker compose --profile slam up -d mola-lo` | Experimental | LiDAR odometry development path |
+| LIO-SAM | `docker compose --profile liosam up -d velodyne-liosam spot-sdk-imu lio-sam` | Experimental | Isolated LIO-SAM integration |
+| LIO-SAM RViz | `docker compose --profile liosam-rviz up -d lio-sam-rviz` | Experimental | LIO-SAM visualization |
+| LIO-SAM bridge | `docker compose --profile liosam-bridge up -d lio-sam-map-odom-bridge` | Development only | Opt-in `map -> odom` bridge |
 
 > [!WARNING]
-> **RViz Panel Service Names:** If `spot_name: ""` (empty) in `config/spot_config.yaml`, you must clear the robot name field in the RViz Spot Driver panel. By default, RViz sets the name to "spot", which adds a namespace (`/spot/claim`), causing buttons to fail. Leave the field empty to use root-level services (`/claim`).
+> `mrg_slam` and `mrg + slam_toolbox` are the only working mapping path. The hybrid, RTAB-Map, MOLA, and LIO-SAM paths are for development and comparison work.
 
+## Standard Workflows
 
-## Configuration
-
-Edit `config/spot_config.yaml` to customize behavior. Key parameters:
-
-```yaml
-# Connection
-username: "user"
-password: "your_password"
-hostname: "192.168.80.3"
-
-# Automatic behaviors
-auto_claim: False           # Auto-claim lease on startup
-auto_power_on: False        # Auto-power motors
-auto_stand: False           # Auto-stand after power on
-
-# Cameras
-rgb_cameras: False          # False for greyscale cameras
-initialize_spot_cam: False  # Enable SpotCam payload
-
-# Sensors
-use_velodyne: True          # Enable Velodyne lidar
-velodyne_rate: 10.0         # Point cloud rate (Hz)
-
-# Update rates
-robot_state_rate: 50.0      # Joint states/TF (Hz)
-image_rate: 15.0            # Camera images (Hz)
-```
-
-See config file for complete options with inline documentation.
-
-## ROS2 Topics & Services
-
-### Key Topics
+### 1. Safe Spot bringup
 
 ```bash
-# Robot state
-/joint_states
-/odometry
-/tf
-
-# Cameras
-/camera/frontleft/image
-/camera/frontright/image
-/depth/frontleft/image
-
-# Velodyne
-/velodyne/points
-
-# Status
-/status/battery_states
-/status/estop
+docker compose up -d spot-driver
+docker compose logs -f spot-driver
 ```
 
-### Control Services
+This gives you Spot state, TF, and the camera topics without claiming or moving the robot.
+
+### 2. Supported 3D mapping
 
 ```bash
-# Inside container
-source /opt/ros/humble/setup.bash
-source /ros_ws/install/setup.bash
-
-# Lease control
-ros2 service call /claim std_srvs/srv/Trigger
-ros2 service call /release std_srvs/srv/Trigger
-
-# Basic control
-ros2 service call /power_on std_srvs/srv/Trigger
-ros2 service call /stand std_srvs/srv/Trigger
-ros2 service call /sit std_srvs/srv/Trigger
-ros2 service call /power_off std_srvs/srv/Trigger
-
-# Arm control (if equipped)
-ros2 service call /arm_stow std_srvs/srv/Trigger
-ros2 service call /arm_unstow std_srvs/srv/Trigger
+docker compose --profile slam --profile rviz up -d mrg-rviz
 ```
 
-### Example Sequence
+This is the main mapping workflow. It starts the Spot driver, Velodyne pipeline, `mrg_slam`, the `map -> odom` bridge, and RViz.
+
+Useful outputs:
+
+- `/mrg_slam/map_points`
+- `/floor_detection/floor_points`
+- `/scan_matching_odometry/odom`
+
+Save results:
 
 ```bash
+./tools/save_mrg_map.sh maps/my_map.pcd 0.2
+./tools/save_mrg_graph.sh graphs/my_graph
+```
+
+### 3. Experimental hybrid 2D + 3D mapping
+
+```bash
+docker compose --profile mrg-hybrid-rviz up -d
+```
+
+This profile is set up so:
+
+- `slam_toolbox` owns the live `map -> odom -> body` localization path
+- `mrg_slam` runs in isolated `mrg_*` frames
+- a separate bridge aligns the MRG 3D map into the same `map` frame for RViz
+
+Use this path when you want a 2D occupancy map and the 3D MRG map at the same time.
+
+### 4. Experimental SLAM comparisons
+
+RTAB-Map:
+
+```bash
+docker compose --profile rtabmap-rviz up -d rtabmap-rviz
+```
+
+LIO-SAM:
+
+```bash
+docker compose --profile liosam up -d velodyne-liosam spot-sdk-imu lio-sam
+docker compose --profile liosam-rviz up -d lio-sam-rviz
+```
+
+MOLA:
+
+```bash
+docker compose --profile slam up -d mola-lo
+```
+
+## RViz
+
+Allow Docker to use your display:
+
+```bash
+xhost +local:docker
+```
+
+If RViz does not show up:
+
+- check `DISPLAY` in `.env`
+- make sure X11 or VNC is actually running
+- use `mrg-rviz` for the supported mapping view
+
+## Stop and Inspect
+
+Stop everything from this repository:
+
+```bash
+./tools/stop_all.sh
+```
+
+Common checks:
+
+```bash
+docker compose ps
+docker compose logs -f spot-driver
+docker compose logs -f mrg-slam
+docker compose logs -f velodyne
 docker exec -it spot_driver bash
-source /opt/ros/humble/setup.bash && source /ros_ws/install/setup.bash
-
-ros2 service call /claim std_srvs/srv/Trigger
-ros2 service call /power_on std_srvs/srv/Trigger
-sleep 2
-ros2 service call /stand std_srvs/srv/Trigger
-sleep 3
-ros2 service call /sit std_srvs/srv/Trigger
-ros2 service call /power_off std_srvs/srv/Trigger
-ros2 service call /release std_srvs/srv/Trigger
 ```
 
-## Troubleshooting
+## Practical Notes
+
+### Spot driver
+
+- services are namespaced under `/spot/...` when `SPOT_NAME=spot`
+- the RViz Spot panel is the simplest way to claim, power, stand, and sit during supervised tests
+
+### Velodyne
+
+Current payload assumptions:
+
+```text
+Model: VLP-16-A
+IP: 192.168.1.201
+RPM: 600
+Returns: Strongest
+```
+
+### MOLA
+
+`mola-lo` is wired in, but on the current SpotCORE host the installed `ros-humble-mola*` runtime still crashes on the live Velodyne stream. Keep it experimental.
+
+### LIO-SAM
+
+The current Spot SDK IMU path is not yet a validated field IMU source. Do not treat LIO-SAM as the production mapping workflow.
+
+## Minimal Troubleshooting
 
 ### Cannot connect to Spot
 
 ```bash
-# Check network
 ping 192.168.80.3
-
-# Verify credentials in .env or config/spot_config.yaml
-# Ensure Spot is powered on and WiFi is active
 ```
 
-### RViz doesn't display
+Check:
+
+- `SPOT_HOSTNAME`
+- `SPOT_USERNAME`
+- `./secrets/spot_password.txt`
+
+### No Velodyne points
 
 ```bash
-# Check DISPLAY variable
-echo $DISPLAY
-
-# Re-enable X11
-xhost +local:docker
-
-# For VNC, ensure correct display number in .env
-DISPLAY=:15100
+ping 192.168.1.201
+docker compose logs -f velodyne
 ```
 
-### Image/camera errors
+### RViz buttons do not work
 
-Set `rgb_cameras: False` in `config/spot_config.yaml` if you have greyscale cameras. Leave this as false for the RICELab spot since we have grayscale cameras.
+If `SPOT_NAME=` is empty, clear the robot name field in the Spot RViz panel.
 
-### Permission denied (Docker)
+## Repository Layout
 
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
+```text
+spot_bringup/
+|- config/          # Driver and SLAM configs
+|- ros2_ws/         # Local ROS 2 support package
+|- rviz/            # RViz configs
+|- tools/           # Helper scripts
+|- spot_ros2/       # Upstream driver submodule
+|- docker-compose.yaml
+|- Dockerfile
+|- Dockerfile.mrg
+|- Dockerfile.rtabmap
+|- Dockerfile.slam
+`- Dockerfile.liosam
 ```
 
-### Container crashes
+## References
 
-```bash
-# Check logs
-docker-compose logs
-
-# Verify config syntax
-cat config/spot_config.yaml
-
-# Ensure credentials are correct
-```
-
-## Updating spot_ros2
-
-```bash
-cd spot_ros2
-git pull origin main
-cd ..
-git add spot_ros2
-git commit -m "Update spot_ros2 submodule"
-```
-
-## Resources
-
-- [Spot ROS2 Driver](https://github.com/bdaiinstitute/spot_ros2)
-- [Boston Dynamics Spot Documentation](https://dev.bostondynamics.com/)
-- [ROS2 Humble Documentation](https://docs.ros.org/en/humble/)
-
----
-
-**License:** Follows upstream spot_ros2 driver license
+- [spot_ros2](https://github.com/bdaiinstitute/spot_ros2)
+- [Boston Dynamics developer documentation](https://dev.bostondynamics.com/)
+- [ROS 2 Humble documentation](https://docs.ros.org/en/humble/)
+- [mrg_slam](https://github.com/aserbremen/mrg_slam)
+- [MOLA documentation](https://docs.mola-slam.org/latest/)
